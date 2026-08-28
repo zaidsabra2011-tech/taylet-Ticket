@@ -109,6 +109,20 @@ class TicketPanel(View):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+    
+    # الدخول التلقائي للروم المحدد فور تشغيل البوت
+    target_channel_id = 1525434040822403283
+    channel = bot.get_channel(target_channel_id)
+    
+    if channel and isinstance(channel, discord.VoiceChannel):
+        if not discord.utils.get(bot.voice_clients, guild=channel.guild):
+            try:
+                await channel.connect(self_deaf=True)
+                print(f"Successfully joined voice channel: {channel.name}")
+            except Exception as e:
+                print(f"Failed to join voice channel: {e}")
+    else:
+        print("Voice channel not found or invalid ID.")
 
 
 # --- أوامر التكتات والمسح ---
@@ -134,33 +148,6 @@ async def clear(ctx, amount: int = 10):
     msg = await ctx.send(f"🧹 تم حذف `{len(deleted)}` رسالة بنجاح.")
     await asyncio.sleep(3)
     await msg.delete()
-
-
-# --- أوامر الصوت الثابت (دخول البوت للروم) ---
-
-@bot.command(name="دخل", aliases=["join"])
-async def join(ctx):
-    if not ctx.author.voice:
-        return await ctx.send("❌ يجب أن تكون متصلاً بروم صوتي أولاً!")
-    
-    destination = ctx.author.voice.channel
-    if ctx.voice_client:
-        await ctx.voice_client.move_to(destination)
-    else:
-        # self_deaf=True للبقاء في الروم بدون مشاكل
-        await destination.connect(self_deaf=True)
-    
-    await ctx.send(f"✅ دخلت الروم الصوتي (**{destination.name}**) وسأبقى جالسًا معك هنا!")
-
-
-@bot.command(name="اطلع", aliases=["leave"])
-@commands.has_permissions(administrator=True)
-async def leave(ctx):
-    if ctx.voice_client:
-        await ctx.voice_client.disconnect()
-        await ctx.send("👋 تم الخروج من الروم الصوتي.")
-    else:
-        await ctx.send("❌ البوت ليس في أي روم صوتي أساساً!")
 
 
 token = os.environ.get("BOT_TOKEN")
