@@ -1,6 +1,7 @@
 import os
 import asyncio
 import threading
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 from discord.ui import Select, View, Button, Modal, TextInput
@@ -65,7 +66,7 @@ class TicketControlView(View):
 
     @discord.ui.button(label="استلام التكت 🛄", style=discord.ButtonStyle.green, custom_id="claim_ticket_btn")
     async def claim_button(self, interaction: discord.Interaction, button: Button):
-        if not interaction.user.guild_permissions.administrator:
+        if not interaction.user.guild_permissions.administrator and not any(r.id in ALLOWED_ROLE_IDS for r in interaction.user.roles):
             await interaction.response.send_message("❌ عذراً، هذا الزر مخصص للإدارة فقط!", ephemeral=True)
             return
 
@@ -77,13 +78,14 @@ class TicketControlView(View):
 
     @discord.ui.button(label="إغلاق التكت 🔒", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
     async def close_button(self, interaction: discord.Interaction, button: Button):
-        if not interaction.user.guild_permissions.administrator:
+        if not interaction.user.guild_permissions.administrator and not any(r.id in ALLOWED_ROLE_IDS for r in interaction.user.roles):
             await interaction.response.send_message("❌ عذراً، لا يمكنك إغلاق التكت، مخصص للإدارة فقط!", ephemeral=True)
             return
 
-        await interaction.response.send_message("⏳ سيتم إغلاق التكت خلال 5 ثوانٍ...", ephemeral=False)
-        await send_log(interaction.guild, f"🔒 **إغلاق تكت:** قام المشرف {interaction.user.mention} بإغلاق التكت {interaction.channel.name}")
-        await asyncio.sleep(5)
+        # استجابة سورية لمنع خطأ didn't respond in time
+        await interaction.response.defer(ephemeral=True)
+        await send_log(interaction.guild, f"🔒 **إغلاق تكت:** قام المشرف {interaction.user.mention} بإغلاق التكت `{interaction.channel.name}`")
+        await asyncio.sleep(1)
         await interaction.channel.delete()
 
 
@@ -153,7 +155,6 @@ class ColorSelect(Select):
         if not selected_role:
             return await interaction.response.send_message("❌ الرتبة غير موجودة، يرجى مراجعة الآيديات.", ephemeral=True)
 
-        # إزالة بقية رتب الألوان القديمة لدى العضو لضمان عدم تداخل الألوان
         user_color_roles = [guild.get_role(rid) for rid in COLOR_ROLE_IDS if guild.get_role(rid) in member.roles]
         
         if selected_role in member.roles:
@@ -212,7 +213,7 @@ class ReasonModal(Modal):
                 await send_log(guild, f"👢 **طرد:** قام المشرف {admin.mention} بطرد العضو {self.member_or_id.mention} | السبب: `{reason}`")
                 
             elif self.action_type == "timeout":
-                duration_time = discord.utils.utcnow() + discord.timedelta(minutes=self.duration)
+                duration_time = discord.utils.utcnow() + timedelta(minutes=self.duration)
                 await self.member_or_id.timeout(duration_time, reason=reason)
                 msg = await interaction.channel.send(f"تم إعطاء تايم أوت للعضو {self.member_or_id.mention} لمدة {self.duration} دقيقة\nالسبب: {reason}")
                 await send_log(guild, f"🔇 **تايم أوت:** قام المشرف {admin.mention} بإعطاء كتم للعضو {self.member_or_id.mention} لمدة `{self.duration}` دقيقة | السبب: `{reason}`")
@@ -244,7 +245,6 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 
-# --- إعطاء الرتبة التلقائية عند دخول عضو جديد ---
 @bot.event
 async def on_member_join(member):
     role = member.guild.get_role(AUTO_ROLE_ID)
@@ -256,14 +256,11 @@ async def on_member_join(member):
             print(f"Failed to auto-assign role: {e}")
 
 
-# --- دالة التحقق من الصلاحيات ---
 def has_admin_or_allowed_role(member):
     if member.guild_permissions.administrator:
         return True
     return any(role.id in ALLOWED_ROLE_IDS for role in member.roles)
 
-
-# --- أوامر التكتات والألوان والمسح ---
 
 @bot.command()
 async def setup_ticket(ctx):
@@ -309,8 +306,6 @@ async def clear(ctx, amount: int = 10):
     await asyncio.sleep(5)
     await msg.delete()
 
-
-# --- أوامر العقوبات وإدارتها ---
 
 @bot.command(name="ban")
 async def ban(ctx, member: discord.Member = None):
