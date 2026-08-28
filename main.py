@@ -102,7 +102,7 @@ class TicketSelect(Select):
 
 
 class TicketPanel(View):
-    def __init__(self):
+    def __init__(self, bot):
         super().__init__(timeout=None)
         self.add_item(TicketSelect())
 
@@ -148,7 +148,7 @@ async def setup_ticket(ctx):
         color=discord.Color.blue()
     )
     embed.set_footer(text="Taylet Ultimate Bot")
-    await ctx.send(embed=embed, view=TicketPanel())
+    await ctx.send(embed=embed, view=TicketPanel(bot))
 
 
 @bot.command(name="مسح", aliases=["clear"])
@@ -161,31 +161,58 @@ async def clear(ctx, amount: int = 10):
     await msg.delete()
 
 
-# --- أوامر الإدارة والعقوبات (Kick, Ban, Timeout/Mute) ---
+# --- نظام الأوامر التفاعلية (يسألك البوت عن السبب) ---
+
+# دالة مساعدة للانتظار والرد
+async def ask_for_reason(ctx, member):
+    await ctx.send(f"🤔 يرجى كتابة **السبب** لعملية العقوبة بحق العضو `{member.name}` (أمامك 30 ثانية):")
+
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    try:
+        msg = await bot.wait_for('message', timeout=30.0, check=check)
+        return msg.content
+    except asyncio.TimeoutError:
+        await ctx.send("⏰ انتهى الوقت ولم تكتب السبب، تم إلغاء العملية.")
+        return None
+
 
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason=None):
+async def kick(ctx, member: discord.Member):
     await ctx.message.delete()
+    reason = await ask_for_reason(ctx, member)
+    if not reason:
+        return
+    
     await member.kick(reason=reason)
-    await ctx.send(f"👢 تم طرد العضو `{member.name}` بنجاح. الأسباب: {reason}")
+    await ctx.send(f"👢 تم طرد العضو `{member.name}` بنجاح.\n📝 السبب: {reason}")
 
 
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason=None):
+async def ban(ctx, member: discord.Member):
     await ctx.message.delete()
+    reason = await ask_for_reason(ctx, member)
+    if not reason:
+        return
+    
     await member.ban(reason=reason)
-    await ctx.send(f"🔨 تم حظر (تبنيد) العضو `{member.name}` بنجاح. الأسباب: {reason}")
+    await ctx.send(f"🔨 تم حظر (تبنيد) العضو `{member.name}` بنجاح.\n📝 السبب: {reason}")
 
 
 @bot.command(name="timeout", aliases=["ميوت"])
 @commands.has_permissions(moderate_members=True)
-async def timeout(ctx, member: discord.Member, minutes: int, *, reason=None):
+async def timeout(ctx, member: discord.Member, minutes: int = 5):
     await ctx.message.delete()
+    reason = await ask_for_reason(ctx, member)
+    if not reason:
+        return
+    
     duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
     await member.timeout(duration, reason=reason)
-    await ctx.send(f"🔇 تم إعطاء كتم (Timeout) للعضو `{member.name}` لمدة `{minutes}` دقيقة.")
+    await ctx.send(f"🔇 تم إعطاء كتم للعضو `{member.name}` لمدة `{minutes}` دقيقة.\n📝 السبب: {reason}")
 
 
 @bot.command(name="unmute", aliases=["فك"])
