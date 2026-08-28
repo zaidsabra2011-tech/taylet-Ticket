@@ -12,13 +12,13 @@ AUTO_ROLE_ID = 1525607421886726235
 ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  
 LOG_CHANNEL_ID = 1542839653638606918          
 
-# تم تعديل وترتيب الآيديات بناءً على رتب السيرفر لديك (من 1 إلى 5)
+# ترتيـب الألوان والآيديات حسب رتب السيرفر لديك
 COLOR_ROLE_IDS = [
-    1542844911932547092, # رتبة 1
-    1542844920140664845, # رتبة 2
-    1542844920988180480, # رتبة 3
-    1542844921675776080, # رتبة 4
-    1542844922389073951  # رتبة 5
+    1542844911932547092, # رتبة 1 (أسود)
+    1542844920140664845, # رتبة 2 (أبيض)
+    1542844920988180480, # رتبة 3 (أحمر)
+    1542844921675776080, # رتبة 4 (أزرق)
+    1542844922389073951  # رتبة 5 (سكني)
 ]
 
 # 1. Simple HTTP Server for Render Keep-Alive
@@ -135,17 +135,17 @@ class TicketPanel(View):
         self.add_item(TicketSelect())
 
 
-# --- نظام اختيار الألوان ---
+# --- نظام اختيار الألوان المحدث بدقة ---
 class ColorSelect(Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="1", description="اختيار رتبة 1", emoji="🛡️", value=str(COLOR_ROLE_IDS[0])),
-            discord.SelectOption(label="2", description="اختيار رتبة 2", emoji="🛡️", value=str(COLOR_ROLE_IDS[1])),
-            discord.SelectOption(label="3", description="اختيار رتبة 3", emoji="🛡️", value=str(COLOR_ROLE_IDS[2])),
-            discord.SelectOption(label="4", description="اختيار رتبة 4", emoji="🛡️", value=str(COLOR_ROLE_IDS[3])),
-            discord.SelectOption(label="5", description="اختيار رتبة 5", emoji="🛡️", value=str(COLOR_ROLE_IDS[4])),
+            discord.SelectOption(label="أسود", description="اختيار لون أسود", emoji="⬛", value=str(COLOR_ROLE_IDS[0])),
+            discord.SelectOption(label="أبيض", description="اختيار لون أبيض", emoji="⬜", value=str(COLOR_ROLE_IDS[1])),
+            discord.SelectOption(label="أحمر", description="اختيار لون أحمر", emoji="🟥", value=str(COLOR_ROLE_IDS[2])),
+            discord.SelectOption(label="أزرق", description="اختيار لون أزرق", emoji="🟦", value=str(COLOR_ROLE_IDS[3])),
+            discord.SelectOption(label="سكني", description="اختيار لون سكني", emoji="🔘", value=str(COLOR_ROLE_IDS[4])),
         ]
-        super().__init__(placeholder="اختر رتبتك المفضلة من القائمة...", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder="اختر لونك المفضل من القائمة...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         guild = interaction.guild
@@ -160,12 +160,12 @@ class ColorSelect(Select):
         
         if selected_role in member.roles:
             await member.remove_roles(selected_role)
-            await interaction.response.send_message(f"✅ تم إزالة الرتبة {selected_role.name} منك بنجاح.", ephemeral=True)
+            await interaction.response.send_message(f"✅ تم إزالة اللون {selected_role.name} منك بنجاح.", ephemeral=True)
         else:
             if user_color_roles:
                 await member.remove_roles(*user_color_roles)
             await member.add_roles(selected_role)
-            await interaction.response.send_message(f"✅ تم إعطاؤك الرتبة {selected_role.name} بنجاح.", ephemeral=True)
+            await interaction.response.send_message(f"✅ تم إعطاؤك اللون {selected_role.name} بنجاح.", ephemeral=True)
 
 
 class ColorPanel(View):
