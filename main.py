@@ -131,6 +131,9 @@ class ReasonSelect(Select):
             if self.action_type == "ban":
                 await self.member.ban(reason=reason)
                 await interaction.response.send_message(f"🔨 تم حظر العضو `{self.member.name}` بنجاح.\n📝 السبب: {reason}", ephemeral=False)
+            elif self.action_type == "kick":
+                await self.member.kick(reason=reason)
+                await interaction.response.send_message(f"👢 تم طرد العضو `{self.member.name}` بنجاح.\n📝 السبب: {reason}", ephemeral=False)
             elif self.action_type == "timeout":
                 duration_time = discord.utils.utcnow() + discord.timedelta(minutes=self.duration)
                 await self.member.timeout(duration_time, reason=reason)
@@ -219,7 +222,7 @@ async def clear(ctx, amount: int = 10):
     await msg.delete()
 
 
-# --- أوامر العقوبات بالرتب المحددة والقوائم ---
+# --- أوامر العقوبات (تتعامل مع المنشن أو الآيدي مباشرة) ---
 
 @bot.command(name="ban")
 async def ban(ctx, member: discord.Member = None):
@@ -228,11 +231,25 @@ async def ban(ctx, member: discord.Member = None):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     
     if not member:
-        return await ctx.send("❌ يرجى منشن العضو المراد حظره، مثال: `!ban @user`")
+        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!ban @user` أو `!ban 123456789`")
 
     await ctx.message.delete()
     view = ReasonView("ban", member)
     await ctx.send(f"📌 اختر سبب حظر العضو `{member.name}`:", view=view)
+
+
+@bot.command(name="kick")
+async def kick(ctx, member: discord.Member = None):
+    if not has_admin_or_allowed_role(ctx.author):
+        await ctx.message.delete()
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    
+    if not member:
+        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!kick @user` أو `!kick 123456789`")
+
+    await ctx.message.delete()
+    view = ReasonView("kick", member)
+    await ctx.send(f"📌 اختر سبب طرد العضو `{member.name}`:", view=view)
 
 
 @bot.command(name="timeout", aliases=["ميوت"])
