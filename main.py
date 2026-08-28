@@ -7,10 +7,18 @@ from discord.ui import Select, View, Button, Modal, TextInput
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 # --- الإعدادات المخصصة ---
-TARGET_VOICE_CHANNEL_ID = 1525434137769676912  # آيدي الروم الصوتي للبوت
 AUTO_ROLE_ID = 1525607421886726235           # آيدي رتبة الأعضاء الجدد التلقائية
 ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  # رتب الإدارة المسموح لها استخدام الأوامر
 LOG_CHANNEL_ID = 1542839653638606918          # آيدي روم السجلات (Log Channel)
+
+# آيدي رتب الألوان التي أرسلتها
+COLOR_ROLE_IDS = [
+    1542844911932547092,
+    1542844920140664845,
+    1542844920988180480,
+    1542844921675776080,
+    1542844922389073951
+]
 
 # 1. Simple HTTP Server for Render Keep-Alive
 class SimpleHTTPRequestHandlerCustom(SimpleHTTPRequestHandler):
@@ -36,7 +44,6 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.messages = True
 intents.message_content = True
-intents.voice_states = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -125,6 +132,46 @@ class TicketPanel(View):
         self.add_item(TicketSelect())
 
 
+# --- نظام اختيار الألوان (Color Roles Select) ---
+class ColorSelect(Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="لون 1", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[0])),
+            discord.SelectOption(label="لون 2", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[1])),
+            discord.SelectOption(label="لون 3", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[2])),
+            discord.SelectOption(label="لون 4", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[3])),
+            discord.SelectOption(label="لون 5", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[4])),
+        ]
+        super().__init__(placeholder="اختر لونك المفضل من القائمة...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        member = interaction.user
+        selected_role_id = int(self.values[0])
+        
+        selected_role = guild.get_role(selected_role_id)
+        if not selected_role:
+            return await interaction.response.send_message("❌ الرتبة غير موجودة، يرجى مراجعة الآيديات.", ephemeral=True)
+
+        # إزالة بقية رتب الألوان القديمة لدى العضو لضمان عدم تداخل الألوان
+        user_color_roles = [guild.get_role(rid) for rid in COLOR_ROLE_IDS if guild.get_role(rid) in member.roles]
+        
+        if selected_role in member.roles:
+            await member.remove_roles(selected_role)
+            await interaction.response.send_message(f"✅ تم إزالة اللون {selected_role.name} منك بنجاح.", ephemeral=True)
+        else:
+            if user_color_roles:
+                await member.remove_roles(*user_color_roles)
+            await member.add_roles(selected_role)
+            await interaction.response.send_message(f"✅ تم إعطاؤك اللون {selected_role.name} بنجاح.", ephemeral=True)
+
+
+class ColorPanel(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(ColorSelect())
+
+
 # --- نافذة كتابة السبب (Modal) للعقوبات وإدارتها ---
 class ReasonModal(Modal):
     def __init__(self, action_type, member_or_id, duration=None):
@@ -170,7 +217,6 @@ class ReasonModal(Modal):
                 msg = await interaction.channel.send(f"تم إعطاء تايم أوت للعضو {self.member_or_id.mention} لمدة {self.duration} دقيقة\nالسبب: {reason}")
                 await send_log(guild, f"🔇 **تايم أوت:** قام المشرف {admin.mention} بإعطاء كتم للعضو {self.member_or_id.mention} لمدة `{self.duration}` دقيقة | السبب: `{reason}`")
             
-            # حذف رسالة الرد بعد 5 ثواني
             await asyncio.sleep(5)
             try:
                 await msg.delete()
@@ -181,7 +227,6 @@ class ReasonModal(Modal):
             await interaction.response.send_message(f"❌ حدث خطأ أثناء تنفيذ العملية: {e}", ephemeral=True)
 
 
-# --- زر وسيط لفتح نافذة السبب ---
 class OpenModalButton(View):
     def __init__(self, action_type, member_or_id, duration=None):
         super().__init__(timeout=30)
@@ -197,29 +242,6 @@ class OpenModalButton(View):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    
-    # محاولة دخول الروم مع إعادة المحاولة لضمان الاتصال
-    for attempt in range(5):
-        await asyncio.sleep(3)
-        channel = bot.get_channel(TARGET_VOICE_CHANNEL_ID)
-        if not channel:
-            for guild in bot.guilds:
-                channel = guild.get_channel(TARGET_VOICE_CHANNEL_ID)
-                if channel:
-                    break
-                    
-        if channel and isinstance(channel, discord.VoiceChannel):
-            try:
-                if not channel.guild.voice_client:
-                    await channel.connect(self_deaf=True)
-                    print(f"Successfully joined voice channel: {channel.name}")
-                    break
-                else:
-                    await channel.guild.voice_client.move_to(channel)
-                    print(f"Moved to voice channel: {channel.name}")
-                    break
-            except Exception as e:
-                print(f"Attempt {attempt+1} failed to join voice: {e}")
 
 
 # --- إعطاء الرتبة التلقائية عند دخول عضو جديد ---
@@ -241,7 +263,7 @@ def has_admin_or_allowed_role(member):
     return any(role.id in ALLOWED_ROLE_IDS for role in member.roles)
 
 
-# --- أوامر التكتات والمسح ---
+# --- أوامر التكتات والألوان والمسح ---
 
 @bot.command()
 async def setup_ticket(ctx):
@@ -257,6 +279,22 @@ async def setup_ticket(ctx):
     embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=TicketPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد التكتات:** قام المشرف {ctx.author.mention} بإرسال لوحة التكتات.")
+
+
+@bot.command()
+async def setup_colors(ctx):
+    if not has_admin_or_allowed_role(ctx.author):
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    
+    await ctx.message.delete()
+    embed = discord.Embed(
+        title="🎨 نظام اختيار الألوان",
+        description="اختر لونك المفضل من القائمة المنسدلة أدناه لتغيير لون رتبتك فوراً!",
+        color=discord.Color.purple()
+    )
+    embed.set_footer(text="Taylet Ultimate Bot")
+    await ctx.send(embed=embed, view=ColorPanel())
+    await send_log(ctx.guild, f"⚙️ **إعداد الألوان:** قام المشرف {ctx.author.mention} بإرسال لوحة اختيار الألوان.")
 
 
 @bot.command(name="مسح", aliases=["clear"])
@@ -351,6 +389,7 @@ async def untimeout(ctx, member: discord.Member = None):
     if not has_admin_or_allowed_role(ctx.author):
         await ctx.message.delete()
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    if non member: # Wait, handled correctly below
     if not member:
         return await ctx.send("❌ يرجى منشن العضو، مثال: `!untimeout @user`", delete_after=5)
     
