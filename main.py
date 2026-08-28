@@ -136,7 +136,7 @@ async def clear(ctx, amount: int = 10):
     await msg.delete()
 
 
-# --- الأوامر الصوتية الثابتة (تبقى في الروم طول الوقت) ---
+# --- أوامر الصوت الثابت (دخول البوت للروم) ---
 
 @bot.command(name="دخل", aliases=["join"])
 async def join(ctx):
@@ -147,32 +147,10 @@ async def join(ctx):
     if ctx.voice_client:
         await ctx.voice_client.move_to(destination)
     else:
-        # self_deaf=True تضمن بقاء البوت في الروم بدون أن يستهلك موارد أو يسبب إزعاجاً
+        # self_deaf=True للبقاء في الروم بدون مشاكل
         await destination.connect(self_deaf=True)
     
-    await ctx.send(f"✅ دخلت الروم الصوتي (**{destination.name}**) وسأبقى معك هنا!")
-
-
-@bot.command(name="شغل", aliases=["play"])
-async def play(ctx, url: str):
-    if not ctx.voice_client:
-        if ctx.author.voice:
-            await ctx.author.voice.channel.connect(self_deaf=True)
-        else:
-            return await ctx.send("❌ يجب أن يكون البوت في روم صوتي أو تكون أنت فيه!")
-
-    try:
-        if ctx.voice_client.is_playing():
-            ctx.voice_client.stop()
-        
-        # تشغيل الصوت عبر رابط مباشر بصيغة داعمة
-        audio_source = discord.FFmpegPCMAudio(url, executable="ffmpeg") if False else discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(url) if False else discord.FFmpegPCMAudio(url))
-        # للتأكد من العمل بدون أخطاء خارجية، سنعتمد على دفق الصوت المباشر:
-        source = discord.FFmpegPCMAudio(url)
-        ctx.voice_client.play(source)
-        await ctx.send(f"🎶 جاري تشغيل الصوت الآن في الروم!")
-    except Exception as e:
-        await ctx.send(f"❌ حدث خطأ أثناء تشغيل الرابط: تأكد أنه رابط صوتي مباشر.")
+    await ctx.send(f"✅ دخلت الروم الصوتي (**{destination.name}**) وسأبقى جالسًا معك هنا!")
 
 
 @bot.command(name="اطلع", aliases=["leave"])
