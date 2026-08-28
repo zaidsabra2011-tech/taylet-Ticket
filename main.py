@@ -22,7 +22,7 @@ COLOR_ROLE_IDS = [
     1542844922389073951
 ]
 
-# --- إعداد قاعدة البيانات (SQLite) لتخزين النقاط، الرسائل، ووقت الفويس ---
+# --- إعداد قاعدة البيانات (SQLite) لتخزين النقاط، الرسائل، ووقت الفويس (دائم لا يروح عند الإغلاق) ---
 db_conn = sqlite3.connect("bot_stats.db", check_same_thread=False)
 db_cursor = db_conn.cursor()
 
@@ -422,7 +422,7 @@ async def stats(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 
-# --- أوامر الترقية والزيادة الإدارية - مقيدة بالروم المحدد ---
+# --- أوامر الترقية والإدارة - مقيدة بالروم المحدد ---
 @bot.command(name="ترقية", aliases=["promote"])
 async def promote(ctx, member: discord.Member = None, level: int = None):
     if ctx.channel.id != ALLOWED_COMMAND_CHANNEL_ID:
@@ -444,9 +444,9 @@ async def promote(ctx, member: discord.Member = None, level: int = None):
     db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (level, total_exp, member.id))
     db_conn.commit()
 
-    await ctx.send(f"✅ تم ترقية العضو {member.mention} إلى اللفل **{level}** بواسطة {ctx.author.mention}")
+    await ctx.send(f"✅ تم ترقية العضو {member.mention} إلى اللفل **{level}** بواسطة ملك السيرفر {ctx.author.mention}")
     try:
-        await member.send(f"🎉 مبارك! تم ترقيتك إلى اللفل **{level}** في سيرفر {ctx.guild.name} بواسطة المشرف {ctx.author.mention}")
+        await member.send(f"🎉 مبارك! تم ترقيتك إلى اللفل **{level}** في سيرفر {ctx.guild.name} بواسطة ملك السيرفر {ctx.author.mention}")
     except:
         pass
 
@@ -459,7 +459,7 @@ async def addpoints(ctx, member: discord.Member = None, points: int = None):
     if not has_admin_or_allowed_role(ctx.author):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     if not member or points is None:
-        return await ctx.send("❌ الاستخدام الصحيح: `!زيادة @العضو النقاط`", delete_after=5)
+        return await ctx.send("❌ الاستخدام الصحيح: `!زيادة @العضو النقاط` (مثال: `!زيادة @007 50`)", delete_after=5)
 
     msgs, voice_sec, old_lvl, exp = get_user_data(member.id)
     new_exp = exp + points
@@ -479,9 +479,10 @@ async def addpoints(ctx, member: discord.Member = None, points: int = None):
     db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (calculated_level, new_exp, member.id))
     db_conn.commit()
 
-    await ctx.send(f"✅ تم زيادة العضو {member.mention} بمقدار **{points}** نقطة وأصبح إجمالي نقاطه {new_exp} (اللفل: {calculated_level}) بواسطة {ctx.author.mention}")
+    # الرسالة المطلوبة عند الزيادة بالمنشن والنقاط واسم ملك السيرفر
+    await ctx.send(f"✅ تم زيادة {member.mention} بمقدار **{points}** نقطة من قبل ملك السيرفر {ctx.author.mention} | (إجمالي النقاط: {new_exp} - اللفل: {calculated_level})")
     try:
-        await member.send(f"🎁 تم إضافة **{points}** نقطة إلى رصيدك في سيرفر {ctx.guild.name} بواسطة المشرف {ctx.author.mention}!")
+        await member.send(f"🎁 تم إضافة **{points}** نقطة إلى رصيدك في سيرفر {ctx.guild.name} من قبل ملك السيرفر {ctx.author.mention}!")
     except:
         pass
 
