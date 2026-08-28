@@ -138,11 +138,11 @@ class TicketPanel(View):
 class ColorSelect(Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="لون 1", description="اختيار لون 1", emoji="⬛", value=str(COLOR_ROLE_IDS[0])),
-            discord.SelectOption(label="لون 2", description="اختيار لون 2", emoji="⬜", value=str(COLOR_ROLE_IDS[1])),
-            discord.SelectOption(label="لون 3", description="اختيار لون 3", emoji="🟥", value=str(COLOR_ROLE_IDS[2])),
-            discord.SelectOption(label="لون 4", description="اختيار لون 4", emoji="🟦", value=str(COLOR_ROLE_IDS[3])),
-            discord.SelectOption(label="لون 5", description="اختيار لون 5", emoji="🔘", value=str(COLOR_ROLE_IDS[4])),
+            discord.SelectOption(label="لون 1", description="اختيار لون 1", emoji="🔴", value=str(COLOR_ROLE_IDS[0])),
+            discord.SelectOption(label="لون 2", description="اختيار لون 2", emoji="🔵", value=str(COLOR_ROLE_IDS[1])),
+            discord.SelectOption(label="لون 3", description="اختيار لون 3", emoji="🟢", value=str(COLOR_ROLE_IDS[2])),
+            discord.SelectOption(label="لون 4", description="اختيار لون 4", emoji="🟡", value=str(COLOR_ROLE_IDS[3])),
+            discord.SelectOption(label="لون 5", description="اختيار لون 5", emoji="🟣", value=str(COLOR_ROLE_IDS[4])),
         ]
         super().__init__(placeholder="اختر لونك المفضل من القائمة...", min_values=1, max_values=1, options=options)
 
@@ -276,6 +276,8 @@ async def setup_ticket(ctx):
     )
     if ctx.guild.icon:
         embed.set_thumbnail(url=ctx.guild.icon.url)
+        embed.set_image(url=ctx.guild.icon.url) # وضع صورة السيرفر الكبيرة كـ Image مثل الصورة المرفقة
+    
     embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=TicketPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد التكتات:** قام المشرف {ctx.author.mention} بإرسال لوحة التكتات.")
@@ -294,6 +296,8 @@ async def setup_colors(ctx):
     )
     if ctx.guild.icon:
         embed.set_thumbnail(url=ctx.guild.icon.url)
+        embed.set_image(url=ctx.guild.icon.url) # وضع صورة السيرفر الكبيرة كـ Image مثل الصورة المرفقة
+        
     embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=ColorPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد الألوان:** قام المشرف {ctx.author.mention} بإرسال لوحة اختيار الألوان.")
