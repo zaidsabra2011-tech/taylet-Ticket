@@ -22,7 +22,7 @@ COLOR_ROLE_IDS = [
     1542844922389073951
 ]
 
-# --- إعداد قاعدة البيانات (SQLite) لتخزين النقاط، الرسائل، ووقت الفويس (دائم لا يروح عند الإغلاق) ---
+# --- إعداد قاعدة البيانات (SQLite) لتخزين النقاط، الرسائل، ووقت الفويس ---
 db_conn = sqlite3.connect("bot_stats.db", check_same_thread=False)
 db_cursor = db_conn.cursor()
 
@@ -54,8 +54,8 @@ def update_user_stats(user_id, add_msg=0, add_voice_sec=0):
     new_msgs = msgs + add_msg
     new_voice = voice_sec + add_voice_sec
     
-    # كل 10 رسائل = نقطة، كل ساعة فويس (3600 ثانية) = 5 نقاط
-    total_points = (new_msgs // 10) + int((new_voice / 3600) * 5)
+    # حساب النقاط واللفل تلقائياً بناءً على الرسائل والفويس
+    total_points = (new_msgs // 10) + int((new_voice / 3600) * 5) + exp
     
     calculated_level = 0
     remaining_exp = total_points
@@ -69,10 +69,13 @@ def update_user_stats(user_id, add_msg=0, add_voice_sec=0):
         else:
             break
 
+    # نأخذ أعلى لفل بين الحساب التلقائي واللفل الحالي (لضمان عدم ضياع الترقية اليدوية)
+    final_level = max(lvl, calculated_level)
+
     db_cursor.execute("UPDATE user_stats SET messages = ?, voice_seconds = ?, level = ?, exp = ? WHERE user_id = ?",
-                      (new_msgs, new_voice, calculated_level, total_points, user_id))
+                      (new_msgs, new_voice, final_level, total_points, user_id))
     db_conn.commit()
-    return lvl, calculated_level
+    return lvl, final_level
 
 
 # 1. Simple HTTP Server for Render Keep-Alive
@@ -433,15 +436,9 @@ async def promote(ctx, member: discord.Member = None, level: int = None):
     if not member or level is None:
         return await ctx.send("❌ الاستخدام الصحيح: `!ترقية @العضو اللفل`", delete_after=5)
 
-    thresholds = [50, 100, 200]
-    total_exp = 0
-    for i in range(level):
-        if i < len(thresholds):
-            total_exp += thresholds[i]
-        else:
-            total_exp += thresholds[-1] + (i - len(thresholds) + 1) * 200
-
-    db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (level, total_exp, member.id))
+    # ضمان حفظ اللفل الجديد بشكل مباشر وثابت في قاعدة البيانات
+    msgs, voice_sec, old_lvl, exp = get_user_data(member.id)
+    db_cursor.execute("UPDATE user_stats SET level = ? WHERE user_id = ?", (level, member.id))
     db_conn.commit()
 
     await ctx.send(f"✅ تم ترقية العضو {member.mention} إلى اللفل **{level}** بواسطة ملك السيرفر {ctx.author.mention}")
@@ -476,11 +473,12 @@ async def addpoints(ctx, member: discord.Member = None, points: int = None):
         else:
             break
 
-    db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (calculated_level, new_exp, member.id))
+    final_level = max(old_lvl, calculated_level)
+
+    db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (final_level, new_exp, member.id))
     db_conn.commit()
 
-    # الرسالة المطلوبة عند الزيادة بالمنشن والنقاط واسم ملك السيرفر
-    await ctx.send(f"✅ تم زيادة {member.mention} بمقدار **{points}** نقطة من قبل ملك السيرفر {ctx.author.mention} | (إجمالي النقاط: {new_exp} - اللفل: {calculated_level})")
+    await ctx.send(f"✅ تم زيادة {member.mention} بمقدار **{points}** نقطة من قبل ملك السيرفر {ctx.author.mention} | (إجمالي النقاط: {new_exp} - اللفل: {final_level})")
     try:
         await member.send(f"🎁 تم إضافة **{points}** نقطة إلى رصيدك في سيرفر {ctx.guild.name} من قبل ملك السيرفر {ctx.author.mention}!")
     except:
