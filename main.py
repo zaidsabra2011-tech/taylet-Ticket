@@ -1,6 +1,7 @@
 import os
 import asyncio
 import threading
+import sqlite3
 from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
@@ -8,11 +9,11 @@ from discord.ui import Select, View, Button, Modal, TextInput
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 # --- الإعدادات المخصصة ---
-AUTO_ROLE_ID = 1525607421886726235           # آيدي رتبة الأعضاء الجدد التلقائية
-ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  # رتب الإدارة المسموح لها استخدام الأوامر
-LOG_CHANNEL_ID = 1542839653638606918          # آيدي روم السجلات (Log Channel)
+AUTO_ROLE_ID = 1525607421886726235           
+ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  
+LOG_CHANNEL_ID = 1542839653638606918          
+ALLOWED_COMMAND_CHANNEL_ID = 1542853981858963606  # الروم المخصص لأوامر (توب، ستات، ترقية، زيادة)
 
-# آيدي رتب الألوان التي أرسلتها
 COLOR_ROLE_IDS = [
     1542844911932547092,
     1542844920140664845,
@@ -20,6 +21,59 @@ COLOR_ROLE_IDS = [
     1542844921675776080,
     1542844922389073951
 ]
+
+# --- إعداد قاعدة البيانات (SQLite) لتخزين النقاط، الرسائل، ووقت الفويس ---
+db_conn = sqlite3.connect("bot_stats.db", check_same_thread=False)
+db_cursor = db_conn.cursor()
+
+db_cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_stats (
+    user_id INTEGER PRIMARY KEY,
+    messages INTEGER DEFAULT 0,
+    voice_seconds INTEGER DEFAULT 0,
+    level INTEGER DEFAULT 0,
+    exp INTEGER DEFAULT 0
+)
+""")
+db_conn.commit()
+
+# تتبع دخول وخروج الأعضاء للرومات الصوتية {user_id: join_time}
+voice_sessions = {}
+
+def get_user_data(user_id):
+    db_cursor.execute("SELECT messages, voice_seconds, level, exp FROM user_stats WHERE user_id = ?", (user_id,))
+    row = db_cursor.fetchone()
+    if not row:
+        db_cursor.execute("INSERT INTO user_stats (user_id, messages, voice_seconds, level, exp) VALUES (?, 0, 0, 0, 0)", (user_id,))
+        db_conn.commit()
+        return 0, 0, 0, 0
+    return row
+
+def update_user_stats(user_id, add_msg=0, add_voice_sec=0):
+    msgs, voice_sec, lvl, exp = get_user_data(user_id)
+    new_msgs = msgs + add_msg
+    new_voice = voice_sec + add_voice_sec
+    
+    # كل 10 رسائل = نقطة، كل ساعة فويس (3600 ثانية) = 5 نقاط
+    total_points = (new_msgs // 10) + int((new_voice / 3600) * 5)
+    
+    calculated_level = 0
+    remaining_exp = total_points
+    thresholds = [50, 100, 200]
+    
+    while True:
+        current_threshold_req = (thresholds[calculated_level] if calculated_level < len(thresholds) else thresholds[-1] + (calculated_level - len(thresholds) + 1) * 200)
+        if remaining_exp >= current_threshold_req:
+            remaining_exp -= current_threshold_req
+            calculated_level += 1
+        else:
+            break
+
+    db_cursor.execute("UPDATE user_stats SET messages = ?, voice_seconds = ?, level = ?, exp = ? WHERE user_id = ?",
+                      (new_msgs, new_voice, calculated_level, total_points, user_id))
+    db_conn.commit()
+    return lvl, calculated_level
+
 
 # 1. Simple HTTP Server for Render Keep-Alive
 class SimpleHTTPRequestHandlerCustom(SimpleHTTPRequestHandler):
@@ -46,10 +100,10 @@ intents.guilds = True
 intents.messages = True
 intents.message_content = True
 intents.members = True
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# دالة إرسال السجلات (Logs)
 async def send_log(guild, text):
     try:
         channel = guild.get_channel(LOG_CHANNEL_ID)
@@ -59,7 +113,45 @@ async def send_log(guild, text):
         print(f"Failed to send log: {e}")
 
 
-# 3. Ticket Control View (Close & Claim)
+# --- تتبع الرسائل والفويس والنقاط تلقائياً ---
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    
+    old_lvl, new_lvl = update_user_stats(message.author.id, add_msg=1, add_voice_sec=0)
+    
+    if new_lvl > old_lvl:
+        try:
+            await message.author.send(f"🎉 مبروك! لقد صعدت إلى **اللفل {new_lvl}** في سيرفر {message.guild.name}! استمر في التفاعل 💪")
+        except:
+            pass
+
+    await bot.process_commands(message)
+
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if member.bot:
+        return
+    
+    if before.channel is None and after.channel is not None:
+        voice_sessions[member.id] = datetime.utcnow()
+    
+    elif before.channel is not None and after.channel is None:
+        if member.id in voice_sessions:
+            start_time = voice_sessions.pop(member.id)
+            duration_seconds = int((datetime.utcnow() - start_time).total_seconds())
+            if duration_seconds > 0:
+                old_lvl, new_lvl = update_user_stats(member.id, add_msg=0, add_voice_sec=duration_seconds)
+                if new_lvl > old_lvl:
+                    try:
+                        await member.send(f"🎉 مبروك! لقد صعدت إلى **اللفل {new_lvl}** بفضل تواجدك الصوتي في سيرفر {member.guild.name}!")
+                    except:
+                        pass
+
+
+# 3. Ticket Control View
 class TicketControlView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -82,14 +174,13 @@ class TicketControlView(View):
             await interaction.response.send_message("❌ عذراً، لا يمكنك إغلاق التكت، مخصص للإدارة فقط!", ephemeral=True)
             return
 
-        # استجابة سورية لمنع خطأ didn't respond in time
         await interaction.response.defer(ephemeral=True)
         await send_log(interaction.guild, f"🔒 **إغلاق تكت:** قام المشرف {interaction.user.mention} بإغلاق التكت `{interaction.channel.name}`")
         await asyncio.sleep(1)
         await interaction.channel.delete()
 
 
-# 4. Custom Ticket Options
+# 4. Ticket Select Menu
 class TicketSelect(Select):
     def __init__(self):
         options = [
@@ -134,7 +225,7 @@ class TicketPanel(View):
         self.add_item(TicketSelect())
 
 
-# --- نظام اختيار الألوان (Color Roles Select) ---
+# --- نظام اختيار الألوان ---
 class ColorSelect(Select):
     def __init__(self):
         options = [
@@ -173,7 +264,7 @@ class ColorPanel(View):
         self.add_item(ColorSelect())
 
 
-# --- نافذة كتابة السبب (Modal) للعقوبات وإدارتها ---
+# --- نافذة كتابة السبب (Modal) للعقوبات ---
 class ReasonModal(Modal):
     def __init__(self, action_type, member_or_id, duration=None):
         super().__init__(title="حدد سبب العقوبة / الإجراء")
@@ -262,6 +353,140 @@ def has_admin_or_allowed_role(member):
     return any(role.id in ALLOWED_ROLE_IDS for role in member.roles)
 
 
+# --- أمر التوب (!توب أو !top) - مقيد بالروم المحدد ---
+@bot.command(name="توب", aliases=["top"])
+async def top(ctx):
+    if ctx.channel.id != ALLOWED_COMMAND_CHANNEL_ID:
+        return await ctx.send(f"❌ {ctx.author.mention}, عذراً، لا يمكنك استخدام هذا الأمر هنا! يرجى استخدامه في الروم المخصص: <#{ALLOWED_COMMAND_CHANNEL_ID}>", delete_after=5)
+
+    db_cursor.execute("SELECT user_id, messages, level FROM user_stats ORDER BY messages DESC LIMIT 5")
+    top_msgs = db_cursor.fetchall()
+
+    db_cursor.execute("SELECT user_id, voice_seconds, level FROM user_stats ORDER BY voice_seconds DESC LIMIT 5")
+    top_voice = db_cursor.fetchall()
+
+    embed = discord.Embed(title="🏆 لوحة المتصدرين", color=discord.Color.gold())
+    
+    chat_text = ""
+    medals = ["🥇", "🥈", "🥉", "4.", "5."]
+    for idx, row in enumerate(top_msgs):
+        uid, msg_count, lvl = row
+        member = ctx.guild.get_member(uid)
+        name = member.name if member else f"User {uid}"
+        chat_text += f"{medals[idx]} **{name}** — اللفل: {lvl} • الرسائل: {msg_count}\n"
+    
+    embed.add_field(name="💬 الشات", value=chat_text or "لا توجد بيانات بعد", inline=False)
+
+    voice_text = ""
+    for idx, row in enumerate(top_voice):
+        uid, sec_count, lvl = row
+        member = ctx.guild.get_member(uid)
+        name = member.name if member else f"User {uid}"
+        
+        hours = sec_count // 3600
+        days = hours // 24
+        rem_hours = hours % 24
+        rem_mins = (sec_count % 3600) // 60
+        
+        time_str = f"{hours} ساعة"
+        if days > 0:
+            time_str = f"{days} أيام، {rem_hours} ساعة، {rem_mins} دقيقة"
+        elif hours > 0:
+            time_str = f"{hours} ساعة، {rem_mins} دقيقة"
+        else:
+            time_str = f"{rem_mins} دقيقة"
+
+        voice_text += f"{medals[idx]} **{name}** — الوقت: {time_str} • اللفل: {lvl}\n"
+
+    embed.add_field(name="🎙️ الفويس", value=voice_text or "لا توجد بيانات بعد", inline=False)
+    await ctx.send(embed=embed)
+
+
+# --- أمر الستات (!ستات أو !stats) - مقيد بالروم المحدد ---
+@bot.command(name="ستات", aliases=["stats"])
+async def stats(ctx, member: discord.Member = None):
+    if ctx.channel.id != ALLOWED_COMMAND_CHANNEL_ID:
+        return await ctx.send(f"❌ {ctx.author.mention}, عذراً، لا يمكنك استخدام هذا الأمر هنا! يرجى استخدامه في الروم المخصص: <#{ALLOWED_COMMAND_CHANNEL_ID}>", delete_after=5)
+
+    target = member or ctx.author
+    msgs, voice_sec, lvl, exp = get_user_data(target.id)
+    
+    hours = voice_sec // 3600
+    mins = (voice_sec % 3600) // 60
+    secs = voice_sec % 60
+    
+    embed = discord.Embed(title=f"📊 إحصائيات {target.name}", color=discord.Color.blue())
+    embed.add_field(name="💬 الشات", value=f"اللفل: {lvl}\nالرسائل: {msgs}", inline=False)
+    embed.add_field(name="🎙️ الفويس", value=f"اللفل: {lvl}\nالوقت: {hours} ساعات، {mins} دقائق، {secs} ثانية", inline=False)
+    
+    await ctx.send(embed=embed)
+
+
+# --- أوامر الترقية والزيادة الإدارية - مقيدة بالروم المحدد ---
+@bot.command(name="ترقية", aliases=["promote"])
+async def promote(ctx, member: discord.Member = None, level: int = None):
+    if ctx.channel.id != ALLOWED_COMMAND_CHANNEL_ID:
+        return await ctx.send(f"❌ {ctx.author.mention}, عذراً، لا يمكنك استخدام هذا الأمر هنا! يرجى استخدامه في الروم المخصص: <#{ALLOWED_COMMAND_CHANNEL_ID}>", delete_after=5)
+    
+    if not has_admin_or_allowed_role(ctx.author):
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    if not member or level is None:
+        return await ctx.send("❌ الاستخدام الصحيح: `!ترقية @العضو اللفل`", delete_after=5)
+
+    thresholds = [50, 100, 200]
+    total_exp = 0
+    for i in range(level):
+        if i < len(thresholds):
+            total_exp += thresholds[i]
+        else:
+            total_exp += thresholds[-1] + (i - len(thresholds) + 1) * 200
+
+    db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (level, total_exp, member.id))
+    db_conn.commit()
+
+    await ctx.send(f"✅ تم ترقية العضو {member.mention} إلى اللفل **{level}** بواسطة {ctx.author.mention}")
+    try:
+        await member.send(f"🎉 مبارك! تم ترقيتك إلى اللفل **{level}** في سيرفر {ctx.guild.name} بواسطة المشرف {ctx.author.mention}")
+    except:
+        pass
+
+
+@bot.command(name="زيادة", aliases=["addpoints"])
+async def addpoints(ctx, member: discord.Member = None, points: int = None):
+    if ctx.channel.id != ALLOWED_COMMAND_CHANNEL_ID:
+        return await ctx.send(f"❌ {ctx.author.mention}, عذراً، لا يمكنك استخدام هذا الأمر هنا! يرجى استخدامه في الروم المخصص: <#{ALLOWED_COMMAND_CHANNEL_ID}>", delete_after=5)
+
+    if not has_admin_or_allowed_role(ctx.author):
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    if not member or points is None:
+        return await ctx.send("❌ الاستخدام الصحيح: `!زيادة @العضو النقاط`", delete_after=5)
+
+    msgs, voice_sec, old_lvl, exp = get_user_data(member.id)
+    new_exp = exp + points
+    
+    calculated_level = 0
+    remaining_exp = new_exp
+    thresholds = [50, 100, 200]
+    
+    while True:
+        current_threshold_req = (thresholds[calculated_level] if calculated_level < len(thresholds) else thresholds[-1] + (calculated_level - len(thresholds) + 1) * 200)
+        if remaining_exp >= current_threshold_req:
+            remaining_exp -= current_threshold_req
+            calculated_level += 1
+        else:
+            break
+
+    db_cursor.execute("UPDATE user_stats SET level = ?, exp = ? WHERE user_id = ?", (calculated_level, new_exp, member.id))
+    db_conn.commit()
+
+    await ctx.send(f"✅ تم زيادة العضو {member.mention} بمقدار **{points}** نقطة وأصبح إجمالي نقاطه {new_exp} (اللفل: {calculated_level}) بواسطة {ctx.author.mention}")
+    try:
+        await member.send(f"🎁 تم إضافة **{points}** نقطة إلى رصيدك في سيرفر {ctx.guild.name} بواسطة المشرف {ctx.author.mention}!")
+    except:
+        pass
+
+
+# --- أوامر الإدارة الأساسية ---
 @bot.command()
 async def setup_ticket(ctx):
     if not has_admin_or_allowed_role(ctx.author):
