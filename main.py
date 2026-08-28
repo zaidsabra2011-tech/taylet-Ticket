@@ -13,11 +13,11 @@ ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]
 LOG_CHANNEL_ID = 1542839653638606918          
 
 COLOR_ROLE_IDS = [
-    1542844911932547092,
-    1542844920140664845,
-    1542844920988180480,
-    1542844921675776080,
-    1542844922389073951
+    1542844911932547092, # لون 1
+    1542844920140664845, # لون 2
+    1542844920988180480, # لون 3
+    1542844921675776080, # لون 4
+    1542844922389073951  # لون 5
 ]
 
 # 1. Simple HTTP Server for Render Keep-Alive
@@ -120,6 +120,8 @@ class TicketSelect(Select):
             description=f"مرحباً {user.mention}! يرجى كتابة تفاصيل طلبك وسيقوم فريق الدعم بالرد عليك قريباً. تم فتح التكت بنجاح.",
             color=discord.Color.green()
         )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
 
         await channel.send(embed=embed, view=TicketControlView())
         await interaction.response.send_message(f"✅ تم فتح التكت الخاصة بك هنا: {channel.mention}", ephemeral=True)
@@ -136,11 +138,11 @@ class TicketPanel(View):
 class ColorSelect(Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="لون 1", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[0])),
-            discord.SelectOption(label="لون 2", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[1])),
-            discord.SelectOption(label="لون 3", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[2])),
-            discord.SelectOption(label="لون 4", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[3])),
-            discord.SelectOption(label="لون 5", description="اختيار هذا اللون", value=str(COLOR_ROLE_IDS[4])),
+            discord.SelectOption(label="لون 1", description="اختيار لون 1", emoji="⬛", value=str(COLOR_ROLE_IDS[0])),
+            discord.SelectOption(label="لون 2", description="اختيار لون 2", emoji="⬜", value=str(COLOR_ROLE_IDS[1])),
+            discord.SelectOption(label="لون 3", description="اختيار لون 3", emoji="🟥", value=str(COLOR_ROLE_IDS[2])),
+            discord.SelectOption(label="لون 4", description="اختيار لون 4", emoji="🟦", value=str(COLOR_ROLE_IDS[3])),
+            discord.SelectOption(label="لون 5", description="اختيار لون 5", emoji="🔘", value=str(COLOR_ROLE_IDS[4])),
         ]
         super().__init__(placeholder="اختر لونك المفضل من القائمة...", min_values=1, max_values=1, options=options)
 
@@ -272,6 +274,8 @@ async def setup_ticket(ctx):
         description="أهلاً بك! يرجى اختيار القسم المناسب لطلبك من القائمة أدناه لفتح تكت تواصل مع الإدارة.",
         color=discord.Color.blue()
     )
+    if ctx.guild.icon:
+        embed.set_thumbnail(url=ctx.guild.icon.url)
     embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=TicketPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد التكتات:** قام المشرف {ctx.author.mention} بإرسال لوحة التكتات.")
@@ -288,6 +292,8 @@ async def setup_colors(ctx):
         description="اختر لونك المفضل من القائمة المنسدلة أدناه لتغيير لون رتبتك فوراً!",
         color=discord.Color.purple()
     )
+    if ctx.guild.icon:
+        embed.set_thumbnail(url=ctx.guild.icon.url)
     embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=ColorPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد الألوان:** قام المشرف {ctx.author.mention} بإرسال لوحة اختيار الألوان.")
