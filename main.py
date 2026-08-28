@@ -41,7 +41,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# دالة لإرسال السجلات (Logs)
+# دالة إرسال السجلات (Logs)
 async def send_log(guild, text):
     try:
         channel = guild.get_channel(LOG_CHANNEL_ID)
@@ -125,17 +125,17 @@ class TicketPanel(View):
         self.add_item(TicketSelect())
 
 
-# --- نافذة كتابة السبب (Modal) ---
+# --- نافذة كتابة السبب (Modal) للعقوبات وإدارتها ---
 class ReasonModal(Modal):
-    def __init__(self, action_type, member, duration=None):
-        super().__init__(title="حدد سبب العقوبة")
+    def __init__(self, action_type, member_or_id, duration=None):
+        super().__init__(title="حدد سبب العقوبة / الإجراء")
         self.action_type = action_type
-        self.member = member
+        self.member_or_id = member_or_id
         self.duration = duration
 
         self.reason_input = TextInput(
             label="السبب",
-            placeholder="اكتب سبب العقوبة هنا...",
+            placeholder="اكتب السبب هنا...",
             style=discord.TextStyle.short,
             required=True,
             max_length=100
@@ -149,20 +149,26 @@ class ReasonModal(Modal):
 
         try:
             if self.action_type == "ban":
-                await self.member.ban(reason=reason)
-                msg = await interaction.channel.send(f"تم تبنيد العضو {self.member.mention}\nالسبب: {reason}")
-                await send_log(guild, f"🔨 **باند:** قام المشرف {admin.mention} بحظر العضو {self.member.mention} | السبب: `{reason}`")
+                await self.member_or_id.ban(reason=reason)
+                msg = await interaction.channel.send(f"تم تبنيد العضو {self.member_or_id.mention}\nالسبب: {reason}")
+                await send_log(guild, f"🔨 **باند:** قام المشرف {admin.mention} بحظر العضو {self.member_or_id.mention} | السبب: `{reason}`")
                 
+            elif self.action_type == "unban":
+                user = await bot.fetch_user(self.member_or_id)
+                await guild.unban(user, reason=reason)
+                msg = await interaction.channel.send(f"تم إزالة الحظر عن العضو {user.name}\nالسبب: {reason}")
+                await send_log(guild, f"🔓 **فك باند:** قام المشرف {admin.mention} بإلغاء حظر العضو `{user.name}` (`{user.id}`) | السبب: `{reason}`")
+
             elif self.action_type == "kick":
-                await self.member.kick(reason=reason)
-                msg = await interaction.channel.send(f"تم طرد العضو {self.member.mention}\nالسبب: {reason}")
-                await send_log(guild, f"👢 **طرد:** قام المشرف {admin.mention} بطرد العضو {self.member.mention} | السبب: `{reason}`")
+                await self.member_or_id.kick(reason=reason)
+                msg = await interaction.channel.send(f"تم طرد العضو {self.member_or_id.mention}\nالسبب: {reason}")
+                await send_log(guild, f"👢 **طرد:** قام المشرف {admin.mention} بطرد العضو {self.member_or_id.mention} | السبب: `{reason}`")
                 
             elif self.action_type == "timeout":
                 duration_time = discord.utils.utcnow() + discord.timedelta(minutes=self.duration)
-                await self.member.timeout(duration_time, reason=reason)
-                msg = await interaction.channel.send(f"تم إعطاء تايم أوت للعضو {self.member.mention} لمدة {self.duration} دقيقة\nالسبب: {reason}")
-                await send_log(guild, f"🔇 **تايم أوت:** قام المشرف {admin.mention} بإعطاء كتم للعضو {self.member.mention} لمدة `{self.duration}` دقيقة | السبب: `{reason}`")
+                await self.member_or_id.timeout(duration_time, reason=reason)
+                msg = await interaction.channel.send(f"تم إعطاء تايم أوت للعضو {self.member_or_id.mention} لمدة {self.duration} دقيقة\nالسبب: {reason}")
+                await send_log(guild, f"🔇 **تايم أوت:** قام المشرف {admin.mention} بإعطاء كتم للعضو {self.member_or_id.mention} لمدة `{self.duration}` دقيقة | السبب: `{reason}`")
             
             # حذف رسالة الرد بعد 5 ثواني
             await asyncio.sleep(5)
@@ -172,7 +178,20 @@ class ReasonModal(Modal):
                 pass
 
         except Exception as e:
-            await interaction.response.send_message(f"❌ حدث خطأ أثناء تنفيذ العقوبة: {e}", ephemeral=True)
+            await interaction.response.send_message(f"❌ حدث خطأ أثناء تنفيذ العملية: {e}", ephemeral=True)
+
+
+# --- زر وسيط لفتح نافذة السبب ---
+class OpenModalButton(View):
+    def __init__(self, action_type, member_or_id, duration=None):
+        super().__init__(timeout=30)
+        self.action_type = action_type
+        self.member_or_id = member_or_id
+        self.duration = duration
+
+    @discord.ui.button(label="اضغط هنا لكتابة السبب وتأكيد العملية", style=discord.ButtonStyle.blurple)
+    async def open_modal(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(ReasonModal(self.action_type, self.member_or_id, self.duration))
 
 
 @bot.event
@@ -253,35 +272,7 @@ async def clear(ctx, amount: int = 10):
     await msg.delete()
 
 
-# --- أوامر العقوبات بنظام النافذة النصية (Modal) ---
-
-@bot.command(name="ban")
-async def ban(ctx, member: discord.Member = None):
-    if not has_admin_or_allowed_role(ctx.author):
-        await ctx.message.delete()
-        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
-    
-    if not member:
-        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!ban @user`", delete_after=5)
-
-    await ctx.message.delete()
-    modal = ReasonModal("ban", member)
-    # ملاحظة: دالة send لا تقبل modal مباشرة، لذلك يتم إرساله عبر Interaction أو إعطاء طريقة تفاعلية، 
-    # لكن بما أن الأوامر تبدأ بـ prefix (!) سنستبدلها بطريقة زر أو نافذة مباشرة:
-    # لتسهيل الأمر عبر Prefix Commands، سنقوم بفتح Modal عبر أمر تفاعلي أو زر، أو جعل الأمر يفتح نافذة عبر تفاعل زر مؤقت:
-    pass # سنستخدم طريقة الزر السريع لتشغيل نافذة إدخال السبب:
-
-# ----------------- زر وسيط لفتح نافذة السبب -----------------
-class OpenModalButton(View):
-    def __init__(self, action_type, member, duration=None):
-        super().__init__(timeout=30)
-        self.action_type = action_type
-        self.member = member
-        self.duration = duration
-
-    @discord.ui.button(label="اضغط هنا لكتابة السبب وتنفيذ العقوبة", style=discord.ButtonStyle.blurple)
-    async def open_modal(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(ReasonModal(self.action_type, self.member, self.duration))
+# --- أوامر العقوبات وإدارتها ---
 
 @bot.command(name="ban")
 async def ban(ctx, member: discord.Member = None):
@@ -290,6 +281,7 @@ async def ban(ctx, member: discord.Member = None):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     if not member:
         return await ctx.send("❌ يرجى منشن العضو، مثال: `!ban @user`", delete_after=5)
+    
     await ctx.message.delete()
     view = OpenModalButton("ban", member)
     msg = await ctx.send(f"انقر على الزر أدناه لتحديد سبب حظر {member.mention}:", view=view)
@@ -299,6 +291,25 @@ async def ban(ctx, member: discord.Member = None):
     except:
         pass
 
+
+@bot.command(name="unban", aliases=["انبان"])
+async def unban(ctx, user_id: int = None):
+    if not has_admin_or_allowed_role(ctx.author):
+        await ctx.message.delete()
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    if not user_id:
+        return await ctx.send("❌ يرجى كتابة آيدي العضو المراد فك الحظر عنه، مثال: `!unban 123456789123456789`", delete_after=5)
+    
+    await ctx.message.delete()
+    view = OpenModalButton("unban", user_id)
+    msg = await ctx.send(f"انقر على الزر أدناه لتحديد سبب فك الحظر عن الآيدي `{user_id}`:", view=view)
+    await asyncio.sleep(30)
+    try:
+        await msg.delete()
+    except:
+        pass
+
+
 @bot.command(name="kick")
 async def kick(ctx, member: discord.Member = None):
     if not has_admin_or_allowed_role(ctx.author):
@@ -306,6 +317,7 @@ async def kick(ctx, member: discord.Member = None):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     if not member:
         return await ctx.send("❌ يرجى منشن العضو، مثال: `!kick @user`", delete_after=5)
+    
     await ctx.message.delete()
     view = OpenModalButton("kick", member)
     msg = await ctx.send(f"انقر على الزر أدناه لتحديد سبب طرد {member.mention}:", view=view)
@@ -315,6 +327,7 @@ async def kick(ctx, member: discord.Member = None):
     except:
         pass
 
+
 @bot.command(name="timeout", aliases=["ميوت"])
 async def timeout(ctx, member: discord.Member = None, minutes: int = 5):
     if not has_admin_or_allowed_role(ctx.author):
@@ -322,6 +335,7 @@ async def timeout(ctx, member: discord.Member = None, minutes: int = 5):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     if not member:
         return await ctx.send("❌ يرجى منشن العضو، مثال: `!timeout @user 10`", delete_after=5)
+    
     await ctx.message.delete()
     view = OpenModalButton("timeout", member, minutes)
     msg = await ctx.send(f"انقر على الزر أدناه لتحديد سبب تايم أوت لـ {member.mention}:", view=view)
@@ -330,6 +344,29 @@ async def timeout(ctx, member: discord.Member = None, minutes: int = 5):
         await msg.delete()
     except:
         pass
+
+
+@bot.command(name="untimeout", aliases=["انميوت"])
+async def untimeout(ctx, member: discord.Member = None):
+    if not has_admin_or_allowed_role(ctx.author):
+        await ctx.message.delete()
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    if not member:
+        return await ctx.send("❌ يرجى منشن العضو، مثال: `!untimeout @user`", delete_after=5)
+    
+    await ctx.message.delete()
+    try:
+        await member.timeout(None, reason=f"تم إزالة التايم أوت بواسطة {ctx.author.name}")
+        msg = await ctx.send(f"تم إزالة التايم أوت عن العضو {member.mention}")
+        await send_log(ctx.guild, f"🔊 **إزالة تايم أوت:** قام المشرف {ctx.author.mention} بإزالة التايم أوت عن العضو {member.mention}")
+        
+        await asyncio.sleep(5)
+        try:
+            await msg.delete()
+        except:
+            pass
+    except Exception as e:
+        await ctx.send(f"❌ حدث خطأ: {e}", delete_after=5)
 
 
 token = os.environ.get("BOT_TOKEN")
