@@ -31,6 +31,7 @@ intents.guilds = True
 intents.messages = True
 intents.message_content = True
 intents.voice_states = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -112,15 +113,25 @@ async def on_ready():
     
     # الدخول التلقائي للروم المحدد فور تشغيل البوت
     target_channel_id = 1525434040822403283
-    channel = bot.get_channel(target_channel_id)
+    await asyncio.sleep(3)
     
+    channel = bot.get_channel(target_channel_id)
+    if not channel:
+        for guild in bot.guilds:
+            channel = guild.get_channel(target_channel_id)
+            if channel:
+                break
+                
     if channel and isinstance(channel, discord.VoiceChannel):
-        if not discord.utils.get(bot.voice_clients, guild=channel.guild):
-            try:
+        try:
+            if not channel.guild.voice_client:
                 await channel.connect(self_deaf=True)
                 print(f"Successfully joined voice channel: {channel.name}")
-            except Exception as e:
-                print(f"Failed to join voice channel: {e}")
+            else:
+                await channel.guild.voice_client.move_to(channel)
+                print(f"Moved to voice channel: {channel.name}")
+        except Exception as e:
+            print(f"Failed to join voice channel: {e}")
     else:
         print("Voice channel not found or invalid ID.")
 
@@ -148,6 +159,41 @@ async def clear(ctx, amount: int = 10):
     msg = await ctx.send(f"🧹 تم حذف `{len(deleted)}` رسالة بنجاح.")
     await asyncio.sleep(3)
     await msg.delete()
+
+
+# --- أوامر الإدارة والعقوبات (Kick, Ban, Timeout/Mute) ---
+
+@bot.command(name="kick")
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: discord.Member, *, reason=None):
+    await ctx.message.delete()
+    await member.kick(reason=reason)
+    await ctx.send(f"👢 تم طرد العضو `{member.name}` بنجاح. الأسباب: {reason}")
+
+
+@bot.command(name="ban")
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: discord.Member, *, reason=None):
+    await ctx.message.delete()
+    await member.ban(reason=reason)
+    await ctx.send(f"🔨 تم حظر (تبنيد) العضو `{member.name}` بنجاح. الأسباب: {reason}")
+
+
+@bot.command(name="timeout", aliases=["ميوت"])
+@commands.has_permissions(moderate_members=True)
+async def timeout(ctx, member: discord.Member, minutes: int, *, reason=None):
+    await ctx.message.delete()
+    duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
+    await member.timeout(duration, reason=reason)
+    await ctx.send(f"🔇 تم إعطاء كتم (Timeout) للعضو `{member.name}` لمدة `{minutes}` دقيقة.")
+
+
+@bot.command(name="unmute", aliases=["فك"])
+@commands.has_permissions(moderate_members=True)
+async def unmute(ctx, member: discord.Member):
+    await ctx.message.delete()
+    await member.timeout(None)
+    await ctx.send(f"🔊 تم رفع الكتم عن العضو `{member.name}` بنجاح.")
 
 
 token = os.environ.get("BOT_TOKEN")
