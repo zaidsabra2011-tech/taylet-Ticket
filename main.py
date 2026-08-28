@@ -7,7 +7,7 @@ from discord.ui import Select, View, Button
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 # --- الإعدادات المخصصة ---
-TARGET_VOICE_CHANNEL_ID = 1525434040822403283  # آيدي الروم الصوتي للبوت
+TARGET_VOICE_CHANNEL_ID = 1525434137769676912  # آيدي الروم الصوتي الجديد للبوت
 AUTO_ROLE_ID = 1525607421886726235           # آيدي رتبة الأعضاء الجدد التلقائية
 ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  # رتب الإدارة المسموح لها استخدام الأوامر
 
@@ -130,14 +130,21 @@ class ReasonSelect(Select):
         try:
             if self.action_type == "ban":
                 await self.member.ban(reason=reason)
-                await interaction.response.send_message(f"🔨 تم حظر العضو `{self.member.name}` بنجاح.\n📝 السبب: {reason}", ephemeral=False)
+                msg = await interaction.response.send_message(f"🔨 تم تبنيد العضو {self.member.mention}\n📝 السبب: {reason}", ephemeral=False)
             elif self.action_type == "kick":
                 await self.member.kick(reason=reason)
-                await interaction.response.send_message(f"👢 تم طرد العضو `{self.member.name}` بنجاح.\n📝 السبب: {reason}", ephemeral=False)
+                msg = await interaction.response.send_message(f"👢 تم طرد العضو {self.member.mention}\n📝 السبب: {reason}", ephemeral=False)
             elif self.action_type == "timeout":
                 duration_time = discord.utils.utcnow() + discord.timedelta(minutes=self.duration)
                 await self.member.timeout(duration_time, reason=reason)
-                await interaction.response.send_message(f"🔇 تم إعطاء كتم للعضو `{self.member.name}` لمدة `{self.duration}` دقيقة.\n📝 السبب: {reason}", ephemeral=False)
+                msg = await interaction.response.send_message(f"🔇 تم إعطاء تايم أوت للعضو {self.member.mention} لمدة `{self.duration}` دقيقة\n📝 السبب: {reason}", ephemeral=False)
+            
+            # حذف الرسالة بعد 5 ثواني
+            await asyncio.sleep(5)
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass
         except Exception as e:
             await interaction.response.send_message(f"❌ حدث خطأ أثناء تنفيذ العقوبة: {e}", ephemeral=True)
 
@@ -186,7 +193,7 @@ async def on_member_join(member):
             print(f"Failed to auto-assign role: {e}")
 
 
-# --- دالة التحقق من الصلاحيات والرضا عن الرتب ---
+# --- دالة التحقق من الصلاحيات ---
 def has_admin_or_allowed_role(member):
     if member.guild_permissions.administrator:
         return True
@@ -217,12 +224,12 @@ async def clear(ctx, amount: int = 10):
         
     await ctx.message.delete()
     deleted = await ctx.channel.purge(limit=amount)
-    msg = await ctx.send(f"🧹 تم حذف `{len(deleted)}` رسالة بنجاح.")
-    await asyncio.sleep(3)
+    msg = await ctx.send(f"🧹 تم مسح `{len(deleted)}` رسالة بنجاح.")
+    await asyncio.sleep(5)
     await msg.delete()
 
 
-# --- أوامر العقوبات (تتعامل مع المنشن أو الآيدي مباشرة) ---
+# --- أوامر العقوبات ---
 
 @bot.command(name="ban")
 async def ban(ctx, member: discord.Member = None):
@@ -231,11 +238,11 @@ async def ban(ctx, member: discord.Member = None):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     
     if not member:
-        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!ban @user` أو `!ban 123456789`")
+        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!ban @user`", delete_after=5)
 
     await ctx.message.delete()
     view = ReasonView("ban", member)
-    await ctx.send(f"📌 اختر سبب حظر العضو `{member.name}`:", view=view)
+    await ctx.send(f"📌 اختر سبب تبنيد العضو {member.mention}:", view=view)
 
 
 @bot.command(name="kick")
@@ -245,11 +252,11 @@ async def kick(ctx, member: discord.Member = None):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     
     if not member:
-        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!kick @user` أو `!kick 123456789`")
+        return await ctx.send("❌ يرجى منشن العضو أو وضع آيديه، مثال: `!kick @user`", delete_after=5)
 
     await ctx.message.delete()
     view = ReasonView("kick", member)
-    await ctx.send(f"📌 اختر سبب طرد العضو `{member.name}`:", view=view)
+    await ctx.send(f"📌 اختر سبب طرد العضو {member.mention}:", view=view)
 
 
 @bot.command(name="timeout", aliases=["ميوت"])
@@ -259,11 +266,11 @@ async def timeout(ctx, member: discord.Member = None, minutes: int = 5):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
         
     if not member:
-        return await ctx.send("❌ يرجى منشن العضو، مثال: `!timeout @user 10`")
+        return await ctx.send("❌ يرجى منشن العضو، مثال: `!timeout @user 10`", delete_after=5)
 
     await ctx.message.delete()
     view = ReasonView("timeout", member, minutes)
-    await ctx.send(f"📌 اختر سبب إعطاء الكتم للعضو `{member.name}`:", view=view)
+    await ctx.send(f"📌 اختر سبب إعطاء التايم أوت للعضو {member.mention}:", view=view)
 
 
 token = os.environ.get("BOT_TOKEN")
