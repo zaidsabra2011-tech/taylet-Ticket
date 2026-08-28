@@ -1,13 +1,13 @@
 import os
 import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import discord
 from discord.ext import commands
 from discord.ui import Select, View, Button
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 
-# 1. Dummy HTTP Server for Render
-class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+# 1. Simple HTTP Server for Render Keep-Alive
+class SimpleHTTPRequestHandlerCustom(SimpleHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
@@ -19,7 +19,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
 def run_http_server():
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandlerCustom)
     server.serve_forever()
 
 threading.Thread(target=run_http_server, daemon=True).start()
@@ -32,34 +32,50 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Close Ticket Button
+# 3. Ticket Close View
 class CloseTicketView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="إغلاق التكت 🔒", style=discord.ButtonStyle.red, custom_id="close_ticket")
+    @discord.ui.button(label="إغلاق التكت 🔒", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
     async def close_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("سيتم إغلاق التكت خلال 5 ثوانٍ...")
+        await interaction.response.send_message("سيتم إغلاق التكت خلال 5 ثوانٍ...", ephemeral=True)
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
-# Dropdown Selection
+# 4. Custom Ticket Options
 class TicketSelect(Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="نقل فردي 🔴", value="individual", description="تقديم طلب نقل شخصي"),
-            discord.SelectOption(label="نقل جروب 🔴", value="group", description="تقديم طلب نقل مجموعة/كلان"),
+            discord.SelectOption(
+                label="دعم فني",
+                description="للحصول على مساعدة وحل المشاكل الفنية",
+                emoji="🛠️",
+                value="دعم فني"
+            ),
+            discord.SelectOption(
+                label="استفسارات عامة",
+                description="لأي أسئلة أو استفسارات عامة",
+                emoji="❓",
+                value="استفسارات عامة"
+            ),
+            discord.SelectOption(
+                label="شكاوى واقتراحات",
+                description="تقديم شكوى أو اقتراح للإدارة",
+                emoji="📝",
+                value="شكاوى واقتراحات"
+            ),
         ]
-        super().__init__(placeholder="اختر نوع التكت...", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder="اختر نوع التكت من القائمة...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
-        category_name = "TICKETS"
+        selected_type = self.values[0]
 
-        category = discord.utils.get(guild.categories, name=category_name)
+        category = discord.utils.get(guild.categories, name="TICKETS")
         if not category:
-            category = await guild.create_category(category_name)
+            category = await guild.create_category("TICKETS")
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -67,19 +83,17 @@ class TicketSelect(Select):
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
 
-        ticket_type = "فردي" if self.values[0] == "individual" else "جروب"
         channel_name = f"ticket-{user.name}"
-        
-        ticket_channel = await guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
-        
-        await interaction.response.send_message(f"تم إنشاء تكتك بنجاح: {ticket_channel.mention}", ephemeral=True)
+        channel = await guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
 
         embed = discord.Embed(
-            title=f"تكت نقل - {ticket_type}",
-            description=f"أهلاً بك {user.mention}، يرجى كتابة تفاصيل طلبك وسيتم الرد عليك قريباً.",
-            color=discord.Color.red()
+            title=f"🎫 تكت جديدة: {selected_type}",
+            description=f"مرحباً {user.mention}!\nتم فتح التكت بنجاح.\nيرجى كتابة تفاصيل طلبك وسيقوم فريق الدعم بالرد عليك قريباً.",
+            color=discord.Color.green()
         )
-        await ticket_channel.send(embed=embed, view=CloseTicketView())
+
+        await channel.send(embed=embed, view=CloseTicketView())
+        await interaction.response.send_message(f"تم فتح التكت الخاصة بك هنا: {channel.mention}", ephemeral=True)
 
 class TicketPanel(View):
     def __init__(self):
@@ -88,19 +102,20 @@ class TicketPanel(View):
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    print(f"Logged in as {bot.user}")
 
-# Command to send panel
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_ticket(ctx):
     await ctx.message.delete()
     embed = discord.Embed(
-        title="نظام التكتات والطلبات",
-        description="يرجى اختيار قسم التكت المناسب من القائمة أدناه لفتح تكت جديد.",
-        color=discord.Color.dark_theme()
+        title="نظام التكت والدعم الفني 🎫",
+        description="أهلاً بك! يرجى اختيار القسم المناسب لطلبك من القائمة أدناه لفتح تكت تواصل مع الإدارة.",
+        color=discord.Color.blue()
     )
+    embed.set_footer(text="Taylet Ticket System")
     await ctx.send(embed=embed, view=TicketPanel())
 
 token = os.environ.get("BOT_TOKEN")
-bot.run(token)
+if token:
+    bot.run(token)
