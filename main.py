@@ -6,6 +6,11 @@ from discord.ext import commands
 from discord.ui import Select, View, Button
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
+# --- الإعدادات المخصصة ---
+TARGET_VOICE_CHANNEL_ID = 1525434040822403283  # آيدي الروم الصوتي للبوت
+AUTO_ROLE_ID = 1525607421886726235           # آيدي رتبة الأعضاء الجدد التلقائية
+ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  # رتب الإدارة المسموح لها استخدام الأوامر
+
 # 1. Simple HTTP Server for Render Keep-Alive
 class SimpleHTTPRequestHandlerCustom(SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -102,45 +107,96 @@ class TicketSelect(Select):
 
 
 class TicketPanel(View):
-    def __init__(self, bot):
+    def __init__(self):
         super().__init__(timeout=None)
         self.add_item(TicketSelect())
+
+
+# --- نظام الأسباب عبر قائمة منسدلة (Select Menu) ---
+class ReasonSelect(Select):
+    def __init__(self, action_type, member, duration=None):
+        self.action_type = action_type
+        self.member = member
+        self.duration = duration
+        options = [
+            discord.SelectOption(label="قذف", description="سبب العقوبة: قذف وسب", emoji="🔴", value="قذف"),
+            discord.SelectOption(label="اسلوب سئ", description="سبب العقوبة: التعامل بأسلوب سيء", emoji="🟠", value="اسلوب سئ"),
+            discord.SelectOption(label="خاص", description="سبب العقوبة: مخالفة قوانين الخاص", emoji="🟡", value="خاص"),
+        ]
+        super().__init__(placeholder="اختر سبب العقوبة من القائمة...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        reason = self.values[0]
+        try:
+            if self.action_type == "ban":
+                await self.member.ban(reason=reason)
+                await interaction.response.send_message(f"🔨 تم حظر العضو `{self.member.name}` بنجاح.\n📝 السبب: {reason}", ephemeral=False)
+            elif self.action_type == "timeout":
+                duration_time = discord.utils.utcnow() + discord.timedelta(minutes=self.duration)
+                await self.member.timeout(duration_time, reason=reason)
+                await interaction.response.send_message(f"🔇 تم إعطاء كتم للعضو `{self.member.name}` لمدة `{self.duration}` دقيقة.\n📝 السبب: {reason}", ephemeral=False)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ حدث خطأ أثناء تنفيذ العقوبة: {e}", ephemeral=True)
+
+class ReasonView(View):
+    def __init__(self, action_type, member, duration=None):
+        super().__init__(timeout=30)
+        self.add_item(ReasonSelect(action_type, member, duration))
 
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
     
-    # الدخول التلقائي للروم المحدد فور تشغيل البوت
-    target_channel_id = 1525434040822403283
-    await asyncio.sleep(3)
-    
-    channel = bot.get_channel(target_channel_id)
-    if not channel:
-        for guild in bot.guilds:
-            channel = guild.get_channel(target_channel_id)
-            if channel:
-                break
-                
-    if channel and isinstance(channel, discord.VoiceChannel):
+    # محاولة دخول الروم مع إعادة المحاولة لضمان الاتصال
+    for attempt in range(5):
+        await asyncio.sleep(3)
+        channel = bot.get_channel(TARGET_VOICE_CHANNEL_ID)
+        if not channel:
+            for guild in bot.guilds:
+                channel = guild.get_channel(TARGET_VOICE_CHANNEL_ID)
+                if channel:
+                    break
+                    
+        if channel and isinstance(channel, discord.VoiceChannel):
+            try:
+                if not channel.guild.voice_client:
+                    await channel.connect(self_deaf=True)
+                    print(f"Successfully joined voice channel: {channel.name}")
+                    break
+                else:
+                    await channel.guild.voice_client.move_to(channel)
+                    print(f"Moved to voice channel: {channel.name}")
+                    break
+            except Exception as e:
+                print(f"Attempt {attempt+1} failed to join voice: {e}")
+
+
+# --- إعطاء الرتبة التلقائية عند دخول عضو جديد ---
+@bot.event
+async def on_member_join(member):
+    role = member.guild.get_role(AUTO_ROLE_ID)
+    if role:
         try:
-            if not channel.guild.voice_client:
-                await channel.connect(self_deaf=True)
-                print(f"Successfully joined voice channel: {channel.name}")
-            else:
-                await channel.guild.voice_client.move_to(channel)
-                print(f"Moved to voice channel: {channel.name}")
+            await member.add_roles(role)
         except Exception as e:
-            print(f"Failed to join voice channel: {e}")
-    else:
-        print("Voice channel not found or invalid ID.")
+            print(f"Failed to auto-assign role: {e}")
+
+
+# --- دالة التحقق من الصلاحيات والرضا عن الرتب ---
+def has_admin_or_allowed_role(member):
+    if member.guild_permissions.administrator:
+        return True
+    return any(role.id in ALLOWED_ROLE_IDS for role in member.roles)
 
 
 # --- أوامر التكتات والمسح ---
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def setup_ticket(ctx):
+    if not has_admin_or_allowed_role(ctx.author):
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+    
     await ctx.message.delete()
     embed = discord.Embed(
         title="🎫 نظام التكت والدعم الفني",
@@ -148,12 +204,14 @@ async def setup_ticket(ctx):
         color=discord.Color.blue()
     )
     embed.set_footer(text="Taylet Ultimate Bot")
-    await ctx.send(embed=embed, view=TicketPanel(bot))
+    await ctx.send(embed=embed, view=TicketPanel())
 
 
 @bot.command(name="مسح", aliases=["clear"])
-@commands.has_permissions(manage_messages=True)
 async def clear(ctx, amount: int = 10):
+    if not has_admin_or_allowed_role(ctx.author) and not ctx.author.guild_permissions.manage_messages:
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+        
     await ctx.message.delete()
     deleted = await ctx.channel.purge(limit=amount)
     msg = await ctx.send(f"🧹 تم حذف `{len(deleted)}` رسالة بنجاح.")
@@ -161,66 +219,34 @@ async def clear(ctx, amount: int = 10):
     await msg.delete()
 
 
-# --- نظام الأوامر التفاعلية (يسألك البوت عن السبب) ---
-
-# دالة مساعدة للانتظار والرد
-async def ask_for_reason(ctx, member):
-    await ctx.send(f"🤔 يرجى كتابة **السبب** لعملية العقوبة بحق العضو `{member.name}` (أمامك 30 ثانية):")
-
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
-
-    try:
-        msg = await bot.wait_for('message', timeout=30.0, check=check)
-        return msg.content
-    except asyncio.TimeoutError:
-        await ctx.send("⏰ انتهى الوقت ولم تكتب السبب، تم إلغاء العملية.")
-        return None
-
-
-@bot.command(name="kick")
-@commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member):
-    await ctx.message.delete()
-    reason = await ask_for_reason(ctx, member)
-    if not reason:
-        return
-    
-    await member.kick(reason=reason)
-    await ctx.send(f"👢 تم طرد العضو `{member.name}` بنجاح.\n📝 السبب: {reason}")
-
+# --- أوامر العقوبات بالرتب المحددة والقوائم ---
 
 @bot.command(name="ban")
-@commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member):
-    await ctx.message.delete()
-    reason = await ask_for_reason(ctx, member)
-    if not reason:
-        return
+async def ban(ctx, member: discord.Member = None):
+    if not has_admin_or_allowed_role(ctx.author):
+        await ctx.message.delete()
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     
-    await member.ban(reason=reason)
-    await ctx.send(f"🔨 تم حظر (تبنيد) العضو `{member.name}` بنجاح.\n📝 السبب: {reason}")
+    if not member:
+        return await ctx.send("❌ يرجى منشن العضو المراد حظره، مثال: `!ban @user`")
+
+    await ctx.message.delete()
+    view = ReasonView("ban", member)
+    await ctx.send(f"📌 اختر سبب حظر العضو `{member.name}`:", view=view)
 
 
 @bot.command(name="timeout", aliases=["ميوت"])
-@commands.has_permissions(moderate_members=True)
-async def timeout(ctx, member: discord.Member, minutes: int = 5):
-    await ctx.message.delete()
-    reason = await ask_for_reason(ctx, member)
-    if not reason:
-        return
-    
-    duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
-    await member.timeout(duration, reason=reason)
-    await ctx.send(f"🔇 تم إعطاء كتم للعضو `{member.name}` لمدة `{minutes}` دقيقة.\n📝 السبب: {reason}")
+async def timeout(ctx, member: discord.Member = None, minutes: int = 5):
+    if not has_admin_or_allowed_role(ctx.author):
+        await ctx.message.delete()
+        return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
+        
+    if not member:
+        return await ctx.send("❌ يرجى منشن العضو، مثال: `!timeout @user 10`")
 
-
-@bot.command(name="unmute", aliases=["فك"])
-@commands.has_permissions(moderate_members=True)
-async def unmute(ctx, member: discord.Member):
     await ctx.message.delete()
-    await member.timeout(None)
-    await ctx.send(f"🔊 تم رفع الكتم عن العضو `{member.name}` بنجاح.")
+    view = ReasonView("timeout", member, minutes)
+    await ctx.send(f"📌 اختر سبب إعطاء الكتم للعضو `{member.name}`:", view=view)
 
 
 token = os.environ.get("BOT_TOKEN")
