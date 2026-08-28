@@ -389,7 +389,6 @@ async def untimeout(ctx, member: discord.Member = None):
     if not has_admin_or_allowed_role(ctx.author):
         await ctx.message.delete()
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
-    if non member: # Wait, handled correctly below
     if not member:
         return await ctx.send("❌ يرجى منشن العضو، مثال: `!untimeout @user`", delete_after=5)
     
