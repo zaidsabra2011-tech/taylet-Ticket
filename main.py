@@ -32,13 +32,30 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 3. Ticket Close View
-class CloseTicketView(View):
+# 3. Ticket Control View (Close & Claim)
+class TicketControlView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
+    @discord.ui.button(label="استلام التكت 🙋‍♂️", style=discord.ButtonStyle.green, custom_id="claim_ticket_btn")
+    async def claim_button(self, interaction: discord.Interaction, button: Button):
+        # التحقق إذا كان المستخدم لديه صلاحية إدارة (Administrator أو رتبة إدارية)
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("عذراً، هذا الزر مخصص للإدارة فقط!", ephemeral=True)
+            return
+        
+        button.disabled = True
+        button.label = f"تم الاستلام بواسطة {interaction.user.name}"
+        await interaction.response.edit_message(view=self)
+        await interaction.channel.send(f"✅ تم استلام التكت بواسطة الإداري: {interaction.user.mention}")
+
     @discord.ui.button(label="إغلاق التكت 🔒", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
     async def close_button(self, interaction: discord.Interaction, button: Button):
+        # منع الشخص العادي من إغلاق التكت (فقط المسؤولين)
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ عذراً، لا يمكنك إغلاق التكت، مخصص للإدارة فقط!", ephemeral=True)
+            return
+
         await interaction.response.send_message("سيتم إغلاق التكت خلال 5 ثوانٍ...", ephemeral=True)
         await asyncio.sleep(5)
         await interaction.channel.delete()
@@ -51,19 +68,19 @@ class TicketSelect(Select):
                 label="دعم فني",
                 description="للحصول على مساعدة وحل المشاكل الفنية",
                 emoji="🛠️",
-                value="دعم فني"
+                value="دعم-فني"
             ),
             discord.SelectOption(
                 label="استفسارات عامة",
                 description="لأي أسئلة أو استفسارات عامة",
                 emoji="❓",
-                value="استفسارات عامة"
+                value="استفسارات-عامة"
             ),
             discord.SelectOption(
                 label="شكاوى واقتراحات",
                 description="تقديم شكوى أو اقتراح للإدارة",
                 emoji="📝",
-                value="شكاوى واقتراحات"
+                value="شكاوى-واقتراحات"
             ),
         ]
         super().__init__(placeholder="اختر نوع التكت من القائمة...", min_values=1, max_values=1, options=options)
@@ -83,7 +100,8 @@ class TicketSelect(Select):
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
 
-        channel_name = f"ticket-{user.name}"
+        # اسم الروم سيكون باسم التكت + اسم المستخدم المختصر
+        channel_name = f"{selected_type}-{user.name}"
         channel = await guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
 
         embed = discord.Embed(
@@ -92,7 +110,7 @@ class TicketSelect(Select):
             color=discord.Color.green()
         )
 
-        await channel.send(embed=embed, view=CloseTicketView())
+        await channel.send(embed=embed, view=TicketControlView())
         await interaction.response.send_message(f"تم فتح التكت الخاصة بك هنا: {channel.mention}", ephemeral=True)
 
 class TicketPanel(View):
