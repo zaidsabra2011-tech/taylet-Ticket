@@ -269,16 +269,10 @@ async def setup_ticket(ctx):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     
     await ctx.message.delete()
-    embed = discord.Embed(
-        title="🎫 نظام التكت والدعم الفني",
-        description="أهلاً بك! يرجى اختيار القسم المناسب لطلبك من القائمة أدناه لفتح تكت تواصل مع الإدارة.",
-        color=discord.Color.blue()
-    )
+    embed = discord.Embed(color=discord.Color.blue())
     if ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-        embed.set_image(url=ctx.guild.icon.url) # وضع صورة السيرفر الكبيرة كـ Image مثل الصورة المرفقة
+        embed.set_image(url=ctx.guild.icon.url) # إرسال صورة السيرفر الكبيرة بدون أي نصوص داخل الإيمبد
     
-    embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=TicketPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد التكتات:** قام المشرف {ctx.author.mention} بإرسال لوحة التكتات.")
 
@@ -289,16 +283,10 @@ async def setup_colors(ctx):
         return await ctx.send(f"❌ {ctx.author.mention}, ليس لديك صلاحية لاستخدام هذا الأمر!", delete_after=5)
     
     await ctx.message.delete()
-    embed = discord.Embed(
-        title="🎨 نظام اختيار الألوان",
-        description="اختر لونك المفضل من القائمة المنسدلة أدناه لتغيير لون رتبتك فوراً!",
-        color=discord.Color.purple()
-    )
+    embed = discord.Embed(color=discord.Color.purple())
     if ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-        embed.set_image(url=ctx.guild.icon.url) # وضع صورة السيرفر الكبيرة كـ Image مثل الصورة المرفقة
+        embed.set_image(url=ctx.guild.icon.url) # إرسال صورة السيرفر الكبيرة بدون أي نصوص داخل الإيمبد
         
-    embed.set_footer(text="Taylet Ultimate Bot")
     await ctx.send(embed=embed, view=ColorPanel())
     await send_log(ctx.guild, f"⚙️ **إعداد الألوان:** قام المشرف {ctx.author.mention} بإرسال لوحة اختيار الألوان.")
 
