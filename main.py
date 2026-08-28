@@ -7,7 +7,7 @@ from discord.ui import Select, View, Button
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 # --- الإعدادات المخصصة ---
-TARGET_VOICE_CHANNEL_ID = 1525434137769676912  # آيدي الروم الصوتي الجديد للبوت
+TARGET_VOICE_CHANNEL_ID = 1525434137769676912  # آيدي الروم الصوتي للبوت
 AUTO_ROLE_ID = 1525607421886726235           # آيدي رتبة الأعضاء الجدد التلقائية
 ALLOWED_ROLE_IDS = [1539434561455394907, 1533833117369110610]  # رتب الإدارة المسموح لها استخدام الأوامر
 
@@ -128,23 +128,31 @@ class ReasonSelect(Select):
     async def callback(self, interaction: discord.Interaction):
         reason = self.values[0]
         try:
+            # 1. حذف رسالة القائمة فوراً عند اختيار السبب
+            try:
+                await interaction.message.delete()
+            except:
+                pass
+
+            # 2. تنفيذ العقوبة وإرسال رسالة مؤقتة تختفي بعد 5 ثوانٍ
             if self.action_type == "ban":
                 await self.member.ban(reason=reason)
-                msg = await interaction.response.send_message(f"🔨 تم تبنيد العضو {self.member.mention}\n📝 السبب: {reason}", ephemeral=False)
+                msg = await interaction.channel.send(f"🔨 تم تبنيد العضو {self.member.mention}\n📝 السبب: `{reason}`")
             elif self.action_type == "kick":
                 await self.member.kick(reason=reason)
-                msg = await interaction.response.send_message(f"👢 تم طرد العضو {self.member.mention}\n📝 السبب: {reason}", ephemeral=False)
+                msg = await interaction.channel.send(f"👢 تم طرد العضو {self.member.mention}\n📝 السبب: `{reason}`")
             elif self.action_type == "timeout":
                 duration_time = discord.utils.utcnow() + discord.timedelta(minutes=self.duration)
                 await self.member.timeout(duration_time, reason=reason)
-                msg = await interaction.response.send_message(f"🔇 تم إعطاء تايم أوت للعضو {self.member.mention} لمدة `{self.duration}` دقيقة\n📝 السبب: {reason}", ephemeral=False)
+                msg = await interaction.channel.send(f"🔇 تم إعطاء تايم أوت للعضو {self.member.mention} لمدة `{self.duration}` دقيقة\n📝 السبب: `{reason}`")
             
-            # حذف الرسالة بعد 5 ثواني
+            # حذف رسالة النتيجة بعد 5 ثواني لتنظيف الشات تماماً
             await asyncio.sleep(5)
             try:
-                await interaction.delete_original_response()
+                await msg.delete()
             except:
                 pass
+
         except Exception as e:
             await interaction.response.send_message(f"❌ حدث خطأ أثناء تنفيذ العقوبة: {e}", ephemeral=True)
 
